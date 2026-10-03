@@ -1,0 +1,18 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'ua.vodohrai.app'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'ua.vodohrai.app'
+        minSdk 23
+        targetSdk 35
+        versionCode 19
+        versionName '1.9'
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
