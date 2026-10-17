@@ -1,0 +1,60 @@
+{
+  "javascript": [
+    {
+      "script": 1,
+      "passed": true,
+      "error": ""
+    },
+    {
+      "script": 2,
+      "passed": true,
+      "error": ""
+    },
+    {
+      "script": 3,
+      "passed": true,
+      "error": ""
+    },
+    {
+      "script": 4,
+      "passed": true,
+      "error": ""
+    },
+    {
+      "script": 5,
+      "passed": true,
+      "error": ""
+    },
+    {
+      "script": 6,
+      "passed": true,
+      "error": ""
+    },
+    {
+      "script": 7,
+      "passed": true,
+      "error": ""
+    },
+    {
+      "script": 8,
+      "passed": true,
+      "error": ""
+    }
+  ],
+  "xml": [
+    [
+      "app/src/main/AndroidManifest.xml",
+      true
+    ],
+    [
+      "app/src/main/res/drawable/splash.xml",
+      true
+    ],
+    [
+      "app/src/main/res/values/styles.xml",
+      true
+    ]
+  ],
+  "android_build": "not_run_no_sdk",
+  "runtime_integration": "not_run"
+}
