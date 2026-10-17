@@ -61,28 +61,37 @@ main{max-width:1100px;margin:auto;padding:18px 16px 92px}.pagehead{display:flex;
 
 <script src="config.js"></script>
 <script>
-// Android native export bridge; browser export remains unchanged.
+// Save generated reports through Android MediaStore; keep browser downloads unchanged.
+const vodoHraiExportBlobs = new Map();
 (function(){
-  if(!window.VodoHraiAndroid || !window.VodoHraiAndroid.saveBase64File) return;
-  const nativeCreate=URL.createObjectURL.bind(URL);
-  const blobs=new Map();
-  URL.createObjectURL=function(blob){const url=nativeCreate(blob);blobs.set(url,blob);return url;};
-  const nativeRevoke=URL.revokeObjectURL.bind(URL);
-  URL.revokeObjectURL=function(url){blobs.delete(url);return nativeRevoke(url);};
-  document.addEventListener('click',function(event){
-    const a=event.target.closest('a[download]');
-    if(!a || !blobs.has(a.href)) return;
-    event.preventDefault();
-    const blob=blobs.get(a.href), name=a.download || 'VodoHrai_export.csv';
-    const reader=new FileReader();
-    reader.onload=function(){
-      try{window.VodoHraiAndroid.saveBase64File(name,blob.type||'application/octet-stream',String(reader.result).split(',')[1]);}
-      catch(e){alert('Не вдалося експортувати файл: '+e.message);}
-    };
-    reader.onerror=function(){alert('Не вдалося прочитати файл експорту');};
-    reader.readAsDataURL(blob);
-  },true);
+  const makeUrl=URL.createObjectURL.bind(URL);
+  const revokeUrl=URL.revokeObjectURL.bind(URL);
+  URL.createObjectURL=function(blob){
+    const url=makeUrl(blob);
+    vodoHraiExportBlobs.set(url,blob);
+    return url;
+  };
+  URL.revokeObjectURL=function(url){
+    vodoHraiExportBlobs.delete(url);
+    return revokeUrl(url);
+  };
 })();
+function vodoHraiDownload(a){
+  const bridge=window.VodoHraiAndroid;
+  const blob=vodoHraiExportBlobs.get(a.href);
+  if(!bridge || typeof bridge.saveBase64File!=='function' || !blob){a.click();return;}
+  const name=a.download||'VodoHrai_export.csv';
+  const reader=new FileReader();
+  reader.onload=function(){
+    try{
+      const data=String(reader.result||'');
+      const encoded=data.substring(data.indexOf(',')+1);
+      bridge.saveBase64File(name,blob.type||'application/octet-stream',encoded);
+    }catch(e){alert('Помилка передачі файлу Android: '+e.message);}
+  };
+  reader.onerror=function(){alert('Не вдалося підготувати файл для Android');};
+  reader.readAsDataURL(blob);
+}
 const CONFIG=(window.VODOHRAI_CONFIG||{SUPABASE_URL:"",SUPABASE_ANON_KEY:"",ORG_ID:"vodohrai-main",UPDATE_URL:"update.json"});
 let CAR_WORKERS=["Оксенюк","Сінчук","Гончарук","Желай","Бірюк","Кудінов"];
 const ADMINS=["Юрченко","Михайлишина"];
@@ -290,7 +299,7 @@ function clientCharge(id){const c=localDB.clients.find(x=>x.id===id);if(!c)retur
 async function clientChargeSave(id){const amount=Number($('chargeSum').value),day=$('chargeDay').value;if(!Number.isFinite(amount)||amount<=0||!day)return alert('Введи дату та суму більше нуля.');clientsEnsure();localDB.clientDaily.push({id:crypto.randomUUID(),client_id:id,date:day,amount,note:$('chargeNote').value.trim(),created_at:new Date().toISOString(),created_by:user.name});await clientsPersist();closeModal();clientsDay=day;renderClients()}
 function clientPay(id){const c=localDB.clients.find(x=>x.id===id);if(!c)return;const balance=clientBalance(id);openModal('Погашення боргу · '+clientsEsc(c.name),`<p>Залишок боргу: <strong>${clientMoney(balance)}</strong></p><label>Дата оплати</label><input type="date" class="input" id="payDay" value="${clientsDay}"><label>Сплачено, ₴</label><input type="number" class="input" id="paySum" min="0.01" max="${Math.max(balance,0)}" step="0.01"><label>Коментар</label><input class="input" id="payNote"><button class="btn primary wide" onclick="clientPaySave('${id}')">Підтвердити оплату</button>`)}
 async function clientPaySave(id){const amount=Number($('paySum').value),day=$('payDay').value;if(!Number.isFinite(amount)||amount<=0||amount>clientBalance(id)+0.00001||!day)return alert('Сума оплати має бути більшою за нуль і не перевищувати борг.');clientsEnsure();localDB.clientPayments.push({id:crypto.randomUUID(),client_id:id,date:day,amount,note:$('payNote').value.trim(),created_at:new Date().toISOString(),created_by:user.name});await clientsPersist();closeModal();clientsDay=day;renderClients()}
-function clientExcel(){clientsEnsure();const xmlEsc=x=>String(x??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[ch]));const cell=v=>`<Cell><Data ss:Type="String">${xmlEsc(v)}</Data></Cell>`;const sheet=(name,rows)=>`<Worksheet ss:Name="${xmlEsc(name)}"><Table>${rows.map(r=>`<Row>${r.map(cell).join('')}</Row>`).join('')}</Table></Worksheet>`;const now=new Date(),stamp=now.toLocaleString('uk-UA');const base=[['Клієнт','Телефон','Авто','Номер','Примітка','Постійний','Загальний борг'],...localDB.clients.map(c=>[c.name,c.phone,c.car,c.plate,c.note,c.regular!==false?'Так':'Ні',clientBalance(c.id).toFixed(2)])];const daily=[['ВОДОГРАЙ — ЩОДЕННИЙ ЗВІТ ПО КЛІЄНТАХ'],['Облікова дата',clientsDay],['Файл сформовано',stamp],[],['Час операції','Клієнт','Авто','Номер','Операція','Нараховано, ₴','Сплачено, ₴','Примітка','Адміністратор']];const ev=[...localDB.clientDaily.filter(x=>x.date===clientsDay&&x.amount!=null).map(x=>({...x,kind:'Замовлення'})),...localDB.clientPayments.filter(x=>x.date===clientsDay).map(x=>({...x,kind:'Сплачено'}))].sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')));ev.forEach(x=>{const c=localDB.clients.find(y=>y.id===x.client_id)||{};daily.push([x.created_at?new Date(x.created_at).toLocaleTimeString('uk-UA'):'',c.name||'',c.car||'',c.plate||'',x.kind,x.kind==='Замовлення'?Number(x.amount).toFixed(2):'',x.kind==='Сплачено'?Number(x.amount).toFixed(2):'',x.note||'',x.created_by||x.updated_by||''])});daily.push([],['Нараховано за день',ev.filter(x=>x.kind==='Замовлення').reduce((n,x)=>n+Number(x.amount||0),0).toFixed(2)],['Сплачено за день',ev.filter(x=>x.kind==='Сплачено').reduce((n,x)=>n+Number(x.amount||0),0).toFixed(2)],['Загальний борг на дату',localDB.clients.reduce((n,c)=>n+localDB.clientDaily.filter(x=>x.client_id===c.id&&x.date<=clientsDay).reduce((v,x)=>v+Number(x.amount||0),0)-localDB.clientPayments.filter(x=>x.client_id===c.id&&x.date<=clientsDay).reduce((v,x)=>v+Number(x.amount||0),0),0).toFixed(2)]);const xml=`<?xml version="1.0" encoding="UTF-8"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${sheet('Звіт за день',daily)}${sheet('Борги клієнтів',base)}</Workbook>`;const a=document.createElement('a'),url=URL.createObjectURL(new Blob([xml],{type:'application/vnd.ms-excel;charset=utf-8'}));a.href=url;a.download=`VodoHrai_clients_${clientsDay}_created_${now.toISOString().replace(/[:.]/g,'-')}.xml`;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000)}
+function clientExcel(){clientsEnsure();const xmlEsc=x=>String(x??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[ch]));const cell=v=>`<Cell><Data ss:Type="String">${xmlEsc(v)}</Data></Cell>`;const sheet=(name,rows)=>`<Worksheet ss:Name="${xmlEsc(name)}"><Table>${rows.map(r=>`<Row>${r.map(cell).join('')}</Row>`).join('')}</Table></Worksheet>`;const now=new Date(),stamp=now.toLocaleString('uk-UA');const base=[['Клієнт','Телефон','Авто','Номер','Примітка','Постійний','Загальний борг'],...localDB.clients.map(c=>[c.name,c.phone,c.car,c.plate,c.note,c.regular!==false?'Так':'Ні',clientBalance(c.id).toFixed(2)])];const daily=[['ВОДОГРАЙ — ЩОДЕННИЙ ЗВІТ ПО КЛІЄНТАХ'],['Облікова дата',clientsDay],['Файл сформовано',stamp],[],['Час операції','Клієнт','Авто','Номер','Операція','Нараховано, ₴','Сплачено, ₴','Примітка','Адміністратор']];const ev=[...localDB.clientDaily.filter(x=>x.date===clientsDay&&x.amount!=null).map(x=>({...x,kind:'Замовлення'})),...localDB.clientPayments.filter(x=>x.date===clientsDay).map(x=>({...x,kind:'Сплачено'}))].sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')));ev.forEach(x=>{const c=localDB.clients.find(y=>y.id===x.client_id)||{};daily.push([x.created_at?new Date(x.created_at).toLocaleTimeString('uk-UA'):'',c.name||'',c.car||'',c.plate||'',x.kind,x.kind==='Замовлення'?Number(x.amount).toFixed(2):'',x.kind==='Сплачено'?Number(x.amount).toFixed(2):'',x.note||'',x.created_by||x.updated_by||''])});daily.push([],['Нараховано за день',ev.filter(x=>x.kind==='Замовлення').reduce((n,x)=>n+Number(x.amount||0),0).toFixed(2)],['Сплачено за день',ev.filter(x=>x.kind==='Сплачено').reduce((n,x)=>n+Number(x.amount||0),0).toFixed(2)],['Загальний борг на дату',localDB.clients.reduce((n,c)=>n+localDB.clientDaily.filter(x=>x.client_id===c.id&&x.date<=clientsDay).reduce((v,x)=>v+Number(x.amount||0),0)-localDB.clientPayments.filter(x=>x.client_id===c.id&&x.date<=clientsDay).reduce((v,x)=>v+Number(x.amount||0),0),0).toFixed(2)]);const xml=`<?xml version="1.0" encoding="UTF-8"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${sheet('Звіт за день',daily)}${sheet('Борги клієнтів',base)}</Workbook>`;const a=document.createElement('a'),url=URL.createObjectURL(new Blob([xml],{type:'application/vnd.ms-excel;charset=utf-8'}));a.href=url;a.download=`VodoHrai_clients_${clientsDay}_created_${now.toISOString().replace(/[:.]/g,'-')}.xml`;vodoHraiDownload(a);setTimeout(()=>URL.revokeObjectURL(url),3000)}
 
 
 async function render(){
@@ -590,7 +599,7 @@ function exportDailyCSV(){
     Number(o.total_amount||0)
   ].map(v=>`"${String(v).replaceAll('"','""')}"`).join(";")));
   let blob=new Blob(["\ufeff"+lines.join("\\n")],{type:"text/csv;charset=utf-8"});
-  let a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`vodohray_${reportDate}.csv`;a.click();
+  let a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`vodohray_${reportDate}.csv`;vodoHraiDownload(a);
  });
 }
 function changeReportDate(delta){
@@ -1454,7 +1463,7 @@ loadLocal();collectionVideoUrl=localStorage.getItem("vg_video")||"";auth("login"
         a.download=`VodoHrai_${day}.csv`;
         a.style.display='none';
         document.body.appendChild(a);
-        a.click();
+        vodoHraiDownload(a);
         setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},1500);
         alert(`Звіт сформовано: ${cars.length} авто, ${rugs.length} килимів, каса ${money(finish)} грн.`);
       }catch(e){ console.error(e); alert('Не вдалося сформувати звіт: '+(e?.message||e)); }
@@ -1638,7 +1647,7 @@ loadLocal();collectionVideoUrl=localStorage.getItem("vg_video")||"";auth("login"
     const details=[['Дата','Майстер','Сума, ₴','Коментар','Записав','Час створення'],...rows.map(x=>[x.date,x.master,Number(x.amount).toFixed(2),x.note,x.created_by,x.created_at])];
     const totals=[['Майстер','Аванси за період, ₴'],...masters().map(m=>[m,summary(rows.filter(x=>x.master===m)).toFixed(2)]),['РАЗОМ',summary(rows).toFixed(2)]];
     const xml=`<?xml version="1.0" encoding="UTF-8"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${sheet('Аванси',details)}${sheet('Підсумки',totals)}</Workbook>`;
-    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([xml],{type:'application/vnd.ms-excel;charset=utf-8'}));a.download=`VodoHrai_advances_${filterMonth||'all'}.xml`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),10000);
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([xml],{type:'application/vnd.ms-excel;charset=utf-8'}));a.download=`VodoHrai_advances_${filterMonth||'all'}.xml`;document.body.appendChild(a);vodoHraiDownload(a);a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),10000);
   }
   window.openMasterAdvances=renderAdvances;
   const oldRender=window.render;
